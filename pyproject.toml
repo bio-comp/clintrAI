@@ -77,3 +77,60 @@ norecursedirs = [".git", ".tox", "dist", "build", "*.egg"]
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+# -----------------
+# Linter Settings
+# -----------------
+[tool.ruff.lint]
+# Select a comprehensive set of rule categories.
+# E = pycodestyle Errors
+# W = pycodestyle Warnings
+# F = Pyflakes
+# I = isort (import sorting)
+# C90 = McCabe complexity
+# N = pep8-naming
+# Q = flake8-quotes (for enforcing quote style)
+# UP = pyupgrade (modernize code)
+# B = flake8-bugbear (potential bugs)
+# SIM = flake8-simplify (refactoring suggestions)
+# TID = flake8-tidy-imports
+# ARG = flake8-unused-arguments
+# TCH = flake8-type-checking (runtime import checks)
+# PIE = flake8-pie (misc improvements)
+# RUF = Ruff-specific rules
+select = ["E", "W", "F", "I", "C90", "N", "Q", "UP", "B", "SIM", "TID", "ARG", "TCH", "PIE", "RUF"]
+
+# Ignore specific rules if they conflict with your style.
+# E501 is often ignored in favor of the formatter's line length.
+ignore = ["E501"]
+
+# Enforce double quotes for strings.
+# Q000: Bad quotes - double quotes
+# Q001: Bad quotes - single quotes
+# Q002: Bad quotes - docstring
+# Q003: Avoidable escaped quote
+[tool.ruff.lint.flake8-quotes]
+docstring-quotes = "double"
+inline-quotes = "double"
+multiline-quotes = "double"
+avoid-escape = false # Allows escaping quotes if necessary
+
+# Configure import sorting.
+[tool.ruff.lint.isort]
+known-first-party = ["clintrai"]
+force-sort-within-sections = true
+
+# Set McCabe complexity limit to a reasonable value.
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+
+# -----------------
+# Formatter Settings
+# -----------------
+[tool.ruff.format]
+# Set the desired quote style for the auto-formatter.
+quote-style = "double"
+
+# Set the line length. 88 is the default for Black, 120 is also common.
+line-length = 88

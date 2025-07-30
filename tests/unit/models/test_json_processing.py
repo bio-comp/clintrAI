@@ -4,15 +4,13 @@ import json
 import pytest
 from pathlib import Path
 
-from clintrai.airflow.operators.preparation import (
-    get_nested_val,
-    _flatten_json_record
-)
-from clintrai.models.types import JSONFieldPath, StudyStatus, StudyType, Sex, StudyPhase
+from clintrai.airflow.operators.preparation import _flatten_json_record
+from clintrai.models.json_models import ClinicalTrialJSONRecord
+from clintrai.models.types import StudyStatus, StudyType, Sex, StudyPhase
 
 
-class TestJSONProcessing:
-    """Test cases for JSON data processing functions."""
+class TestJSONModels:
+    """Test cases for JSON Pydantic models."""
     
     @pytest.fixture
     def sample_json_data(self):
@@ -86,50 +84,92 @@ class TestJSONProcessing:
             "hasResults": False
         }
     
-    def test_get_nested_val_success(self, sample_json_data):
-        """Test successful nested value extraction."""
-        # Test simple nested access
-        nct_id = get_nested_val(sample_json_data, ["protocolSection", "identificationModule", "nctId"])
-        assert nct_id == "NCT04619758"
+    def test_json_record_validation_success(self, sample_json_data):
+        """Test successful JSON record validation with Pydantic model."""
+        record = ClinicalTrialJSONRecord(**sample_json_data)
         
-        # Test deeper nesting
-        org_name = get_nested_val(sample_json_data, ["protocolSection", "identificationModule", "organization", "fullName"])
-        assert org_name == "King Edward Medical University"
+        # Test basic identification fields
+        assert record.nct_id == "NCT04619758"
+        assert record.official_title == "Emollient Therapy In Preterm & Low Birth Weight Neonates: A Randomized Clinical Trial"
+        assert record.brief_title == "Emollient Therapy In Preterm & Low Birth Weight Neonates: A Randomized Clinical Trial"
         
-        # Test list access
-        condition = get_nested_val(sample_json_data, ["protocolSection", "conditionsModule", "conditions"])
-        assert condition == ["Weight Gain"]
+        # Test status fields
+        assert record.overall_status == StudyStatus.COMPLETED
+        assert record.study_type == StudyType.INTERVENTIONAL
+        assert record.has_results is False
+        
+        # Test description fields
+        assert "impact of emollient therapy" in record.brief_summary
+        assert "Department of Pediatric Medicine" in record.detailed_description
+        
+        # Test conditions and interventions
+        assert record.conditions == ["Weight Gain"]
+        assert len(record.interventions) == 1
+        assert record.interventions[0] == "Emollient (sunflower oil)"
+        
+        # Test MeSH terms
+        assert len(record.mesh_terms) == 2
+        assert "Body Weight" in record.mesh_terms
+        assert "Weight Gain" in record.mesh_terms
+        
+        # Test eligibility fields
+        assert record.sex == Sex.ALL
+        assert record.minimum_age == "1 Day"
+        assert record.maximum_age == "28 Days"
+        assert record.healthy_volunteers is True
+        
+        # Test enrollment
+        assert record.enrollment == 140
+        
+        # Test dates
+        assert record.start_date == "2018-01-01"
+        assert record.completion_date == "2018-06-30"
+        
+        # Test document files
+        assert len(record.document_files) == 2
+        assert "protocol_v1.pdf" in record.document_files
+        assert "statistical_analysis_plan.pdf" in record.document_files
+        
+        # Test phases
+        assert len(record.phases) == 1
+        assert record.phases[0] == StudyPhase.NA
     
-    def test_get_nested_val_missing_key(self, sample_json_data):
-        """Test nested value extraction with missing keys."""
-        # Test missing intermediate key
-        result = get_nested_val(sample_json_data, ["protocolSection", "missingModule", "someField"])
-        assert result is None
+    def test_json_record_missing_sections(self):
+        """Test JSON record with missing sections."""
+        minimal_data = {
+            "protocolSection": {
+                "identificationModule": {
+                    "nctId": "NCT99999999",
+                    "briefTitle": "Minimal Study"
+                }
+            },
+            "hasResults": True
+        }
         
-        # Test missing final key
-        result = get_nested_val(sample_json_data, ["protocolSection", "identificationModule", "missingField"])
-        assert result is None
+        record = ClinicalTrialJSONRecord(**minimal_data)
         
-        # Test completely wrong path
-        result = get_nested_val(sample_json_data, ["wrongSection", "wrongModule"])
-        assert result is None
+        # Test that basic fields are extracted
+        assert record.nct_id == "NCT99999999"
+        assert record.brief_title == "Minimal Study"
+        assert record.has_results is True
+        
+        # Test that missing fields are None or empty lists
+        assert record.official_title is None
+        assert record.overall_status is None
+        assert record.conditions == []
+        assert record.interventions == []
+        assert record.mesh_terms == []
+        assert record.document_files == []
+        
+        # Test missing dates
+        assert record.start_date is None
+        assert record.completion_date is None
     
-    def test_get_nested_val_type_error(self):
-        """Test nested value extraction with type errors."""
-        # Test accessing key on non-dict
-        data = {"field": "string_value"}
-        result = get_nested_val(data, ["field", "subfield"])
-        assert result is None
-        
-        # Test with None value
-        data = {"field": None}
-        result = get_nested_val(data, ["field", "subfield"])
-        assert result is None
-    
-    def test_flatten_json_record_complete(self, sample_json_data):
-        """Test complete JSON record flattening with real data."""
+    def test_flatten_json_record_with_pydantic_model(self, sample_json_data):
+        """Test flattening with validated Pydantic model."""
+        record = ClinicalTrialJSONRecord(**sample_json_data)
         nct_id = "NCT04619758"
-        flattened = _flatten_json_record(nct_id, sample_json_data)
+        flattened = _flatten_json_record(nct_id, record)
         
         # Test basic identification fields
         assert flattened["json_nct_id"] == "NCT04619758"
@@ -173,39 +213,7 @@ class TestJSONProcessing:
         assert "protocol_v1.pdf" in flattened["json_document_files"]
         assert "statistical_analysis_plan.pdf" in flattened["json_document_files"]
     
-    def test_flatten_json_record_missing_sections(self):
-        """Test JSON flattening with missing sections."""
-        minimal_data = {
-            "protocolSection": {
-                "identificationModule": {
-                    "nctId": "NCT99999999",
-                    "briefTitle": "Minimal Study"
-                }
-            },
-            "hasResults": True
-        }
-        
-        nct_id = "NCT99999999"
-        flattened = _flatten_json_record(nct_id, minimal_data)
-        
-        # Test that basic fields are extracted
-        assert flattened["json_nct_id"] == "NCT99999999"
-        assert flattened["json_brief_title"] == "Minimal Study"
-        assert flattened["json_has_results"] is True
-        
-        # Test that missing fields are None or empty lists
-        assert flattened["json_official_title"] is None
-        assert flattened["json_overall_status"] is None
-        assert flattened["json_conditions"] == []
-        assert flattened["json_interventions"] == []
-        assert flattened["json_condition_meshes"] == []
-        assert flattened["json_document_files"] == []
-        
-        # Test missing dates
-        assert flattened["json_start_date"] is None
-        assert flattened["json_completion_date"] is None
-    
-    def test_flatten_json_record_interventions_extraction(self):
+    def test_interventions_extraction(self):
         """Test intervention name extraction from complex structure."""
         data_with_interventions = {
             "protocolSection": {
@@ -223,13 +231,13 @@ class TestJSONProcessing:
             "hasResults": False
         }
         
-        flattened = _flatten_json_record("NCT12345678", data_with_interventions)
+        record = ClinicalTrialJSONRecord(**data_with_interventions)
         
         # Should extract only interventions with names
         expected_interventions = ["Drug A", "Drug B", "Surgery", "Behavioral Intervention"]
-        assert flattened["json_interventions"] == expected_interventions
+        assert record.interventions == expected_interventions
     
-    def test_flatten_json_record_mesh_terms_extraction(self):
+    def test_mesh_terms_extraction(self):
         """Test MeSH term extraction from derived section."""
         data_with_mesh = {
             "protocolSection": {
@@ -248,13 +256,13 @@ class TestJSONProcessing:
             "hasResults": False
         }
         
-        flattened = _flatten_json_record("NCT12345678", data_with_mesh)
+        record = ClinicalTrialJSONRecord(**data_with_mesh)
         
         # Should extract only terms that exist
         expected_terms = ["Diabetes", "Hypertension", "Heart Disease"]
-        assert flattened["json_condition_meshes"] == expected_terms
+        assert record.mesh_terms == expected_terms
     
-    def test_flatten_json_record_document_files_extraction(self):
+    def test_document_files_extraction(self):
         """Test document filename extraction."""
         data_with_docs = {
             "protocolSection": {
@@ -273,13 +281,13 @@ class TestJSONProcessing:
             "hasResults": False
         }
         
-        flattened = _flatten_json_record("NCT12345678", data_with_docs)
+        record = ClinicalTrialJSONRecord(**data_with_docs)
         
         # Should extract only filenames that exist
         expected_files = ["protocol.pdf", "consent_form.pdf", "appendix.docx"]
-        assert flattened["json_document_files"] == expected_files
+        assert record.document_files == expected_files
     
-    def test_flatten_json_record_empty_lists_and_nulls(self):
+    def test_empty_lists_and_nulls(self):
         """Test handling of empty lists and null values."""
         data_with_empties = {
             "protocolSection": {
@@ -297,83 +305,60 @@ class TestJSONProcessing:
             "hasResults": False
         }
         
-        flattened = _flatten_json_record("NCT12345678", data_with_empties)
+        record = ClinicalTrialJSONRecord(**data_with_empties)
         
         # Test that empty lists are preserved as empty lists
-        assert flattened["json_conditions"] == []
-        assert flattened["json_interventions"] == []
-        assert flattened["json_condition_meshes"] == []
-        assert flattened["json_document_files"] == []
+        assert record.conditions == []
+        assert record.interventions == []
+        assert record.mesh_terms == []
+        assert record.document_files == []
         
         # Test that None values become empty lists where expected
-        assert flattened["json_phases"] == []
-
-
-class TestJSONFieldPathConstants:
-    """Test that JSONFieldPath constants match actual JSON structure."""
+        assert record.phases == []
     
-    @pytest.fixture
-    def sample_json_data(self):
-        """Sample JSON data for testing field paths."""
-        return {
+    def test_phase_mapping_validation(self):
+        """Test that phase mapping works correctly."""
+        data_with_phases = {
             "protocolSection": {
-                "identificationModule": {
-                    "nctId": "NCT04619758",
-                    "officialTitle": "Test Official Title",
-                    "briefTitle": "Test Brief Title"
-                },
-                "statusModule": {
-                    "overallStatus": StudyStatus.COMPLETED,
-                    "startDateStruct": {"date": "2018-01-01"},
-                    "completionDateStruct": {"date": "2018-06-30"}
-                },
-                "descriptionModule": {},
-                "conditionsModule": {},
+                "identificationModule": {"nctId": "NCT12345678"},
                 "designModule": {
-                    "studyType": StudyType.INTERVENTIONAL,
-                    "phases": ["NA"]
-                },
-                "armsInterventionsModule": {},
-                "eligibilityModule": {}
-            },
-            "derivedSection": {
-                "conditionBrowseModule": {}
-            },
-            "documentSection": {
-                "largeDocumentModule": {}
+                    "phases": ["PHASE1", "PHASE2", "PHASE 3", "INVALID_PHASE"]
+                }
             },
             "hasResults": False
         }
+        
+        record = ClinicalTrialJSONRecord(**data_with_phases)
+        
+        # Test phase mapping
+        expected_phases = [StudyPhase.PHASE_1, StudyPhase.PHASE_2, StudyPhase.PHASE_3, StudyPhase.NA]
+        assert record.phases == expected_phases
+
+
+class TestRealJSONFiles:
+    """Test with actual JSON files from the dataset."""
     
-    def test_json_field_paths_validity(self, sample_json_data):
-        """Test that JSONFieldPath constants work with real data."""
-        # Test top-level sections
-        assert JSONFieldPath.PROTOCOL_SECTION.value in sample_json_data
-        assert JSONFieldPath.DERIVED_SECTION.value in sample_json_data
-        assert JSONFieldPath.DOCUMENT_SECTION.value in sample_json_data
-        assert JSONFieldPath.HAS_RESULTS.value in sample_json_data
+    def test_real_json_file_validation(self):
+        """Test validation with real JSON files."""
+        test_files = [
+            "NCT00000102.json",
+            "NCT00001500.json", 
+            "NCT00000122.json"
+        ]
         
-        protocol = sample_json_data[JSONFieldPath.PROTOCOL_SECTION.value]
-        
-        # Test protocol section modules
-        assert JSONFieldPath.IDENTIFICATION_MODULE.value in protocol
-        assert JSONFieldPath.STATUS_MODULE.value in protocol
-        assert JSONFieldPath.DESCRIPTION_MODULE.value in protocol
-        assert JSONFieldPath.CONDITIONS_MODULE.value in protocol
-        assert JSONFieldPath.DESIGN_MODULE.value in protocol
-        assert JSONFieldPath.ARMS_INTERVENTIONS_MODULE.value in protocol
-        assert JSONFieldPath.ELIGIBILITY_MODULE.value in protocol
-        
-        # Test specific field paths work
-        id_module = protocol[JSONFieldPath.IDENTIFICATION_MODULE.value]
-        assert JSONFieldPath.OFFICIAL_TITLE.value in id_module
-        assert JSONFieldPath.BRIEF_TITLE.value in id_module
-        
-        status_module = protocol[JSONFieldPath.STATUS_MODULE.value]
-        assert JSONFieldPath.OVERALL_STATUS.value in status_module
-        assert JSONFieldPath.START_DATE_STRUCT.value in status_module
-        assert JSONFieldPath.COMPLETION_DATE_STRUCT.value in status_module
-        
-        # Test nested date structure
-        start_date_struct = status_module[JSONFieldPath.START_DATE_STRUCT.value]
-        assert JSONFieldPath.DATE.value in start_date_struct
+        for filename in test_files:
+            file_path = Path("data/studies") / filename
+            if file_path.exists():
+                with open(file_path, 'r') as f:
+                    data = json.load(f)
+                
+                # Should validate without errors
+                record = ClinicalTrialJSONRecord(**data)
+                
+                # Basic sanity checks
+                assert record.nct_id is not None
+                assert record.nct_id.startswith("NCT")
+                
+                # Should be able to flatten
+                flattened = _flatten_json_record(record.nct_id, record)
+                assert flattened["json_nct_id"] == record.nct_id

@@ -7,41 +7,7 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, HttpUrl
 
-
-class StudyType(str, Enum):
-    """Types of clinical studies."""
-    
-    INTERVENTIONAL = "Interventional"
-    OBSERVATIONAL = "Observational"
-    PATIENT_REGISTRY = "Patient Registry"
-    EXPANDED_ACCESS = "Expanded Access"
-
-
-class StudyPhase(str, Enum):
-    """Clinical study phases."""
-    
-    NA = "N/A"
-    EARLY_PHASE_1 = "Early Phase 1"
-    PHASE_1 = "Phase 1"
-    PHASE_1_2 = "Phase 1/Phase 2"
-    PHASE_2 = "Phase 2"
-    PHASE_2_3 = "Phase 2/Phase 3"
-    PHASE_3 = "Phase 3"
-    PHASE_4 = "Phase 4"
-
-
-class StudyStatus(str, Enum):
-    """Current status of clinical study."""
-    
-    NOT_YET_RECRUITING = "Not yet recruiting"
-    RECRUITING = "Recruiting"
-    ENROLLING_BY_INVITATION = "Enrolling by invitation"
-    ACTIVE_NOT_RECRUITING = "Active, not recruiting"
-    SUSPENDED = "Suspended"
-    TERMINATED = "Terminated"
-    COMPLETED = "Completed"
-    WITHDRAWN = "Withdrawn"
-    UNKNOWN = "Unknown status"
+from clintrai.models.types import StudyType, StudyPhase, StudyStatus, Sex
 
 
 class InterventionType(str, Enum):
@@ -60,12 +26,6 @@ class InterventionType(str, Enum):
     OTHER = "Other"
 
 
-class Gender(str, Enum):
-    """Gender eligibility for studies."""
-    
-    ALL = "All"
-    FEMALE = "Female"
-    MALE = "Male"
 
 
 class SamplingMethod(str, Enum):
@@ -130,7 +90,7 @@ class Eligibility(BaseModel):
     """Study eligibility criteria."""
     
     criteria: str
-    gender: Gender = Field(default=Gender.ALL)
+    gender: Sex = Field(default=Sex.ALL)
     gender_based: bool = Field(default=False)
     gender_description: str | None = Field(default=None)
     minimum_age: str | None = Field(default=None)

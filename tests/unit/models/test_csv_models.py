@@ -71,7 +71,7 @@ class TestClinicalTrialCSVRecord:
         assert record.phases is None
         
         # Test that we can extract lists
-        conditions = record.extract_conditions_list()
+        conditions = record.conditions_list
         assert conditions == ["Iron Deficiency"]
     
     def test_csv_record_with_pipe_separated_values(self):
@@ -89,10 +89,10 @@ class TestClinicalTrialCSVRecord:
         record = ClinicalTrialCSVRecord(**csv_data)
         
         # Test extraction of pipe-separated lists
-        conditions = record.extract_conditions_list()
+        conditions = record.conditions_list
         assert conditions == ["Inflammatory Bowel Diseases", "IBD"]
         
-        interventions = record.extract_interventions_list()
+        interventions = record.interventions_list
         expected_interventions = [
             "DRUG: TD-1473 - Dose A",
             "DRUG: TD-1473 - Dose B", 
@@ -124,7 +124,7 @@ class TestClinicalTrialCSVRecord:
         }
         
         record = ClinicalTrialCSVRecord(**csv_data)
-        urls = record.extract_document_urls()
+        urls = record.document_urls
         
         expected_urls = [
             "https://example.com/protocol.pdf",
@@ -137,11 +137,11 @@ class TestClinicalTrialCSVRecord:
         record = ClinicalTrialCSVRecord(nct_number="NCT01234567")
         
         # Test with None
-        assert record.extract_document_urls() == []
+        assert record.document_urls == []
         
         # Test with empty string after validation
         record.study_documents = ""
-        assert record.extract_document_urls() == []
+        assert record.document_urls == []
 
 
 class TestHarmonizedClinicalTrial:
@@ -173,10 +173,10 @@ class TestHarmonizedClinicalTrial:
         assert trial.has_results is False
         
         # Test helper methods
-        assert trial.has_json_data() is True
-        assert trial.is_interventional() is False
-        assert trial.is_recruiting() is False
-        assert trial.get_document_count() == 0
+        assert trial.has_json_data is True
+        assert trial.is_interventional is False
+        assert trial.is_recruiting is False
+        assert trial.document_count == 0
     
     def test_harmonized_trial_with_camel_case_input(self):
         """Test that camelCase input is properly converted to snake_case."""
@@ -213,7 +213,7 @@ class TestHarmonizedClinicalTrial:
                 data_source=DataSource.CSV_ONLY,
                 overall_status=status
             )
-            assert trial.is_recruiting() is True
+            assert trial.is_recruiting is True
         
         # Test non-recruiting status
         trial = HarmonizedClinicalTrial(
@@ -221,7 +221,7 @@ class TestHarmonizedClinicalTrial:
             data_source=DataSource.CSV_ONLY,
             overall_status=StudyStatus.COMPLETED
         )
-        assert trial.is_recruiting() is False
+        assert trial.is_recruiting is False
     
     def test_interventional_study_detection(self):
         """Test detection of interventional studies."""
@@ -230,14 +230,14 @@ class TestHarmonizedClinicalTrial:
             data_source=DataSource.CSV_ONLY,
             study_type=StudyType.INTERVENTIONAL
         )
-        assert trial.is_interventional() is True
+        assert trial.is_interventional is True
         
         trial = HarmonizedClinicalTrial(
             nct_id="NCT01234567", 
             data_source=DataSource.CSV_ONLY,
             study_type="OBSERVATIONAL"
         )
-        assert trial.is_interventional() is False
+        assert trial.is_interventional is False
     
     def test_document_counting(self):
         """Test document counting functionality."""
@@ -248,7 +248,7 @@ class TestHarmonizedClinicalTrial:
             document_filenames=["results.pdf", "appendix.pdf"]
         )
         
-        assert trial.get_document_count() == 3
+        assert trial.document_count == 3
 
 
 class TestDocumentReference:
@@ -274,8 +274,8 @@ class TestDocumentReference:
         assert doc.size_bytes == 1024000
         
         # Test helper methods
-        assert doc.get_file_extension() == "pdf"
-        assert doc.is_pdf() is True
+        assert doc.file_extension == "pdf"
+        assert doc.is_pdf is True
     
     def test_file_extension_extraction(self):
         """Test file extension extraction from filename and URL."""
@@ -285,7 +285,7 @@ class TestDocumentReference:
             source=DocumentSource.JSON,
             filename="study_protocol.pdf"
         )
-        assert doc.get_file_extension() == "pdf"
+        assert doc.file_extension == "pdf"
         
         # Test with URL when no filename
         doc = DocumentReference(
@@ -293,7 +293,7 @@ class TestDocumentReference:
             source=DocumentSource.EXTERNAL,
             url="https://example.com/document.docx"
         )
-        assert doc.get_file_extension() == "docx"
+        assert doc.file_extension == "docx"
         
         # Test with URL containing query parameters
         doc = DocumentReference(
@@ -301,7 +301,7 @@ class TestDocumentReference:
             source=DocumentSource.EXTERNAL,
             url="https://example.com/document.pdf?version=1"
         )
-        assert doc.get_file_extension() == "pdf"
+        assert doc.file_extension == "pdf"
         
         # Test with no extension
         doc = DocumentReference(
@@ -309,7 +309,7 @@ class TestDocumentReference:
             source=DocumentSource.CSV,
             filename="document"
         )
-        assert doc.get_file_extension() is None
+        assert doc.file_extension is None
     
     def test_pdf_detection(self):
         """Test PDF document detection."""
@@ -319,7 +319,7 @@ class TestDocumentReference:
             source=DocumentSource.JSON,
             filename="protocol.PDF"  # Test case insensitivity
         )
-        assert doc.is_pdf() is True
+        assert doc.is_pdf is True
         
         # Test non-PDF file
         doc = DocumentReference(
@@ -327,7 +327,7 @@ class TestDocumentReference:
             source=DocumentSource.CSV,
             filename="data.xlsx"
         )
-        assert doc.is_pdf() is False
+        assert doc.is_pdf is False
 
 
 class TestDataHarmonizationStats:
