@@ -5097,6 +5097,25 @@ files = [
 ]
 
 [[package]]
+name = "metaflow"
+version = "2.16.8"
+description = "Metaflow: More AI and ML, Less Engineering"
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "metaflow-2.16.8-py2.py3-none-any.whl", hash = "sha256:b0eca02015791a17c617b15fee37630b0e092e4c91a618ce4e43fc8ea7078091"},
+    {file = "metaflow-2.16.8.tar.gz", hash = "sha256:71f9f499fb0aa65e73a88e8c9e4412f84e10fe17ac289fa90bfcea40a6881bd7"},
+]
+
+[package.dependencies]
+boto3 = "*"
+requests = "*"
+
+[package.extras]
+stubs = ["metaflow-stubs (==2.16.8)"]
+
+[[package]]
 name = "methodtools"
 version = "0.4.7"
 description = "Expand standard functools to methods"
@@ -10633,4 +10652,4 @@ cffi = ["cffi (>=1.11)"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<3.13"
-content-hash = "97e0d7baacb3c0ada9a99512755634eb109f71dc3734449530c92999cf3ad0bb"
+content-hash = "b433df8e0915a230c46c349cf843dbae471bc8d7b5e18948425efe0cd212072c"
