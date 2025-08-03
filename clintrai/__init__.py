@@ -5,11 +5,11 @@ A modern Python package for downloading, curating, and analyzing data from clini
 
 __version__ = "0.1.0"
 
-from clintrai.api import create_default_client, studies, stats
+from clintrai.api import create_hybrid_client, studies, stats
 from clintrai.models.api_models import PagedStudies, Study
 
 __all__ = [
-    "create_default_client", 
+    "create_hybrid_client", 
     "studies",
     "stats",
     "PagedStudies",

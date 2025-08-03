@@ -226,21 +226,25 @@ class HarmonizedClinicalTrial(BaseModel):
     
     
     
+    @computed_field
     @property
     def document_count(self) -> int:
         """Get total number of associated documents."""
         return len(self.document_urls) + len(self.document_filenames)
     
+    @computed_field
     @property
     def has_json_data(self) -> bool:
         """Check if this record includes JSON-derived data."""
         return self.data_source in {DataSource.JSON_PRIORITY, DataSource.CSV_FALLBACK}
     
+    @computed_field
     @property
     def is_interventional(self) -> bool:
         """Check if this is an interventional study."""
         return self.study_type == StudyType.INTERVENTIONAL
     
+    @computed_field
     @property
     def is_recruiting(self) -> bool:
         """Check if the study is currently recruiting."""
@@ -275,6 +279,7 @@ class DocumentReference(BaseModel):
     size_bytes: int | None = Field(None, description="Document size in bytes")
     upload_date: Annotated[date | None, BeforeValidator(parse_flexible_date)] = Field(None, description="Document upload date")
     
+    @computed_field
     @property
     def file_extension(self) -> str | None:
         """Extract file extension from filename or URL."""
@@ -285,6 +290,7 @@ class DocumentReference(BaseModel):
             return url_str.split('.')[-1].split('?')[0].lower() if '.' in url_str else None
         return None
     
+    @computed_field
     @property
     def is_pdf(self) -> bool:
         """Check if this is a PDF document."""
@@ -308,12 +314,18 @@ class DataHarmonizationStats(BaseModel):
     # Optional error tracking
     processing_errors: int = Field(default=0, description="Number of processing errors")
     
+    @computed_field
     @property
     def overlap_percentage(self) -> float:
         """Calculate overlap as percentage of CSV studies."""
-        return (self.overlap_count / self.csv_study_count * 100) if self.csv_study_count > 0 else 0.0
+        if self.csv_study_count == 0:
+            return 0.0
+        return (self.overlap_count / self.csv_study_count) * 100
     
+    @computed_field
     @property 
     def json_coverage_percentage(self) -> float:
         """Calculate JSON coverage as percentage of CSV studies."""
-        return (self.json_study_count / self.csv_study_count * 100) if self.csv_study_count > 0 else 0.0
+        if self.csv_study_count == 0:
+            return 0.0
+        return (self.json_study_count / self.csv_study_count) * 100

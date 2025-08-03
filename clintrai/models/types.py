@@ -1,3 +1,4 @@
+# clintrai/models/types.py
 """Shared types and enums for clinical trial data models."""
 
 from __future__ import annotations
@@ -115,80 +116,42 @@ class CSVFieldName(str, Enum):
     OTHER_IDS = "Other IDs"
 
 
-class FieldName(str, Enum):
-    """Standard field names for harmonized data."""
+class JSONSourceField(str, Enum):
+    """Field names for flattened JSON data columns."""
     
     # Core identification
-    NCT_ID = "nct_id"
-    NCT_NUMBER = "NCT Number"  # CSV column name
-    STUDY_TITLE = "study_title"
-    STUDY_URL = "study_url"
-    ACRONYM = "acronym"
-    
-    # Status and classification
-    STUDY_STATUS = "study_status"
-    STUDY_RESULTS = "study_results"
-    STUDY_TYPE = "study_type"
-    STUDY_DESIGN = "study_design"
-    DATA_SOURCE = "data_source"
-    
-    # Summary and conditions
-    BRIEF_SUMMARY = "brief_summary"
-    CONDITIONS = "conditions"
-    INTERVENTIONS = "interventions"
-    
-    # Outcome measures
-    PRIMARY_OUTCOME_MEASURES = "primary_outcome_measures"
-    SECONDARY_OUTCOME_MEASURES = "secondary_outcome_measures"
-    OTHER_OUTCOME_MEASURES = "other_outcome_measures"
-    
-    # Sponsorship
-    SPONSOR = "sponsor"
-    COLLABORATORS = "collaborators"
-    FUNDER_TYPE = "funder_type"
-    
-    # Demographics
-    SEX = "sex"
-    AGE = "age"
-    PHASES = "phases"
-    ENROLLMENT = "enrollment"
-    
-    # Dates
-    START_DATE = "start_date"
-    PRIMARY_COMPLETION_DATE = "primary_completion_date"
-    COMPLETION_DATE = "completion_date"
-    FIRST_POSTED = "first_posted"
-    RESULTS_FIRST_POSTED = "results_first_posted"
-    LAST_UPDATE_POSTED = "last_update_posted"
-    
-    # Location and documents
-    LOCATIONS = "locations"
-    DOCUMENT_URLS = "document_urls"
-    OTHER_IDS = "other_ids"
-    
-    # Metadata
-    SHARD_HASH = "shard_hash"
-    
-    # JSON-specific fields (prefixed)
+    JSON_NCT_ID = "json_nct_id"
     JSON_OFFICIAL_TITLE = "json_official_title"
     JSON_BRIEF_TITLE = "json_brief_title"
+    JSON_ACRONYM = "json_acronym"
     JSON_ORG_STUDY_ID = "json_org_study_id"
+    
+    # Status and classification
     JSON_OVERALL_STATUS = "json_overall_status"
-    JSON_START_DATE = "json_start_date"
-    JSON_COMPLETION_DATE = "json_completion_date"
-    JSON_BRIEF_SUMMARY = "json_brief_summary"
-    JSON_DETAILED_DESCRIPTION = "json_detailed_description"
     JSON_STUDY_TYPE = "json_study_type"
     JSON_PHASES = "json_phases"
+    JSON_HAS_RESULTS = "json_has_results"
+    
+    # Summary and conditions
+    JSON_BRIEF_SUMMARY = "json_brief_summary"
+    JSON_DETAILED_DESCRIPTION = "json_detailed_description"
     JSON_CONDITIONS = "json_conditions"
     JSON_INTERVENTIONS = "json_interventions"
+    JSON_CONDITION_MESHES = "json_condition_meshes"
+    
+    # Demographics
     JSON_SEX = "json_sex"
     JSON_MINIMUM_AGE = "json_minimum_age"
     JSON_MAXIMUM_AGE = "json_maximum_age"
     JSON_HEALTHY_VOLUNTEERS = "json_healthy_volunteers"
-    JSON_CONDITION_MESHES = "json_condition_meshes"
+    JSON_ENROLLMENT = "json_enrollment"
+    
+    # Dates
+    JSON_START_DATE = "json_start_date"
+    JSON_COMPLETION_DATE = "json_completion_date"
+    
+    # Documents
     JSON_DOCUMENT_FILES = "json_document_files"
-    JSON_HAS_RESULTS = "json_has_results"
 
 
 class JSONFieldPath(str, Enum):
@@ -395,7 +358,4 @@ class StudyResults(str, Enum):
     
     YES = "YES"
     NO = "NO"
-    HAS_RESULTS = "Has Results"
-    NO_RESULTS = "No Results"
-    # Handle mixed case and variations
     UNKNOWN = "UNKNOWN"

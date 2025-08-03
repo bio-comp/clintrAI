@@ -8,7 +8,7 @@ from pathlib import Path
 import httpx
 from deepdiff import DeepDiff
 
-from clintrai.api.client import create_default_client
+from clintrai.api.hybrid_client import create_hybrid_client
 from clintrai.api.studies import fetch_study
 
 
@@ -27,7 +27,7 @@ async def compare_study_data(nct_id: str, local_data_path: Path):
         local_data = json.load(f)
     
     # Fetch from API
-    client = create_default_client()
+    client = create_hybrid_client()
     try:
         api_data = await fetch_study(client, nct_id)
         api_dict = api_data.model_dump()

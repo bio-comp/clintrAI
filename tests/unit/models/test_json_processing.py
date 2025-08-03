@@ -4,7 +4,7 @@ import json
 import pytest
 from pathlib import Path
 
-from clintrai.airflow.operators.preparation import _flatten_json_record
+from clintrai.processing.preparation import _flatten_json_record
 from clintrai.models.json_models import ClinicalTrialJSONRecord
 from clintrai.models.types import StudyStatus, StudyType, Sex, StudyPhase
 

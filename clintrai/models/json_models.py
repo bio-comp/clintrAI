@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from functools import reduce
 from typing import Any
+import operator
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
@@ -456,162 +458,126 @@ class ClinicalTrialJSONRecord(BaseModel):
     document_section: DocumentSection | None = None
     has_results: bool = False
     
-    # Pythonic properties using short-circuiting for safe nested access
+    def _safe_get(self, path: str, default: Any = None) -> Any:
+        """Safely retrieve a nested attribute using dot notation."""
+        try:
+            return reduce(getattr, path.split('.'), self)
+        except AttributeError:
+            return default
+    
+    # Pythonic properties using safe nested access helper
     
     @property
     def nct_id(self) -> str | None:
         """The NCT ID from the identification module."""
-        return (self.protocol_section and 
-                self.protocol_section.identification_module and 
-                self.protocol_section.identification_module.nct_id)
+        return self._safe_get("protocol_section.identification_module.nct_id")
     
     @property
     def official_title(self) -> str | None:
         """The official title."""
-        return (self.protocol_section and 
-                self.protocol_section.identification_module and 
-                self.protocol_section.identification_module.official_title)
+        return self._safe_get("protocol_section.identification_module.official_title")
     
     @property
     def brief_title(self) -> str | None:
         """The brief title."""
-        return (self.protocol_section and 
-                self.protocol_section.identification_module and 
-                self.protocol_section.identification_module.brief_title)
+        return self._safe_get("protocol_section.identification_module.brief_title")
     
     @property
     def overall_status(self) -> StudyStatus | None:
         """The overall status."""
-        return (self.protocol_section and 
-                self.protocol_section.status_module and 
-                self.protocol_section.status_module.overall_status)
+        return self._safe_get("protocol_section.status_module.overall_status")
     
     @property
     def study_type(self) -> StudyType | None:
         """The study type."""
-        return (self.protocol_section and 
-                self.protocol_section.design_module and 
-                self.protocol_section.design_module.study_type)
+        return self._safe_get("protocol_section.design_module.study_type")
     
     @property
     def conditions(self) -> list[str]:
         """The conditions list."""
-        return ((self.protocol_section and 
-                 self.protocol_section.conditions_module and 
-                 self.protocol_section.conditions_module.conditions) or [])
+        return self._safe_get("protocol_section.conditions_module.conditions", [])
     
     @property
     def interventions(self) -> list[str]:
         """Intervention names."""
-        if not (self.protocol_section and 
-                self.protocol_section.arms_interventions_module):
-            return []
+        interventions_list = self._safe_get("protocol_section.arms_interventions_module.interventions", [])
         return [
             intervention.name
-            for intervention in self.protocol_section.arms_interventions_module.interventions
+            for intervention in interventions_list
             if intervention.name
         ]
     
     @property
     def mesh_terms(self) -> list[str]:
         """Condition MeSH terms."""
-        if not (self.derived_section and 
-                self.derived_section.condition_browse_module):
-            return []
+        meshes_list = self._safe_get("derived_section.condition_browse_module.meshes", [])
         return [
             mesh.term
-            for mesh in self.derived_section.condition_browse_module.meshes
+            for mesh in meshes_list
             if mesh.term
         ]
     
     @property
     def document_files(self) -> list[str]:
         """Document filenames."""
-        if not (self.document_section and 
-                self.document_section.large_document_module):
-            return []
+        docs_list = self._safe_get("document_section.large_document_module.large_docs", [])
         return [
             doc.filename
-            for doc in self.document_section.large_document_module.large_docs
+            for doc in docs_list
             if doc.filename
         ]
     
     @property
     def sex(self) -> Sex | None:
         """Sex eligibility."""
-        return (self.protocol_section and 
-                self.protocol_section.eligibility_module and 
-                self.protocol_section.eligibility_module.sex)
+        return self._safe_get("protocol_section.eligibility_module.sex")
     
     @property
     def minimum_age(self) -> str | None:
         """Minimum age."""
-        return (self.protocol_section and 
-                self.protocol_section.eligibility_module and 
-                self.protocol_section.eligibility_module.minimum_age)
+        return self._safe_get("protocol_section.eligibility_module.minimum_age")
     
     @property
     def maximum_age(self) -> str | None:
         """Maximum age."""
-        return (self.protocol_section and 
-                self.protocol_section.eligibility_module and 
-                self.protocol_section.eligibility_module.maximum_age)
+        return self._safe_get("protocol_section.eligibility_module.maximum_age")
     
     @property
     def healthy_volunteers(self) -> bool | None:
         """Healthy volunteers status."""
-        return (self.protocol_section and 
-                self.protocol_section.eligibility_module and 
-                self.protocol_section.eligibility_module.healthy_volunteers)
+        return self._safe_get("protocol_section.eligibility_module.healthy_volunteers")
     
     @property
     def enrollment(self) -> int | None:
         """Enrollment count."""
-        return (self.protocol_section and 
-                self.protocol_section.design_module and
-                self.protocol_section.design_module.enrollment_info and
-                self.protocol_section.design_module.enrollment_info.count)
+        return self._safe_get("protocol_section.design_module.enrollment_info.count")
     
     @property
     def start_date(self) -> str | None:
         """Start date."""
-        return (self.protocol_section and 
-                self.protocol_section.status_module and
-                self.protocol_section.status_module.start_date_struct and
-                self.protocol_section.status_module.start_date_struct.date)
+        return self._safe_get("protocol_section.status_module.start_date_struct.date")
     
     @property
     def completion_date(self) -> str | None:
         """Completion date."""
-        return (self.protocol_section and 
-                self.protocol_section.status_module and
-                self.protocol_section.status_module.completion_date_struct and
-                self.protocol_section.status_module.completion_date_struct.date)
+        return self._safe_get("protocol_section.status_module.completion_date_struct.date")
     
     @property
     def brief_summary(self) -> str | None:
         """Brief summary."""
-        return (self.protocol_section and 
-                self.protocol_section.description_module and 
-                self.protocol_section.description_module.brief_summary)
+        return self._safe_get("protocol_section.description_module.brief_summary")
     
     @property
     def detailed_description(self) -> str | None:
         """Detailed description."""
-        return (self.protocol_section and 
-                self.protocol_section.description_module and 
-                self.protocol_section.description_module.detailed_description)
+        return self._safe_get("protocol_section.description_module.detailed_description")
     
     @property
     def phases(self) -> list[StudyPhase]:
         """Study phases."""
-        return ((self.protocol_section and 
-                 self.protocol_section.design_module and 
-                 self.protocol_section.design_module.phases) or [])
+        return self._safe_get("protocol_section.design_module.phases", [])
     
     @property
     def acronym(self) -> str | None:
         """Study acronym."""
-        return (self.protocol_section and 
-                self.protocol_section.identification_module and 
-                self.protocol_section.identification_module.acronym)
+        return self._safe_get("protocol_section.identification_module.acronym")

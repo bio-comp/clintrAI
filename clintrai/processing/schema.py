@@ -1,20 +1,19 @@
-"""
-Schema definitions and enforcement for clinical trials data harmonization.
-This module defines the output schema and provides functions for 
-data finalization and schema enforcement.
-"""
+"""Schema definitions and enforcement for clinical trials data harmonization."""
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import TypeAlias
 
 import polars as pl
 
 from clintrai.models.types import HarmonizedFieldName
 
+# Type alias for output schema
+OutputSchema: TypeAlias = dict[str, pl.DataType]
 
 # Define output schema for consistency
-OUTPUT_SCHEMA = {
+OUTPUT_SCHEMA: OutputSchema = {
     HarmonizedFieldName.NCT_ID.value: pl.Utf8,
     HarmonizedFieldName.TITLE.value: pl.Utf8,
     HarmonizedFieldName.OFFICIAL_TITLE.value: pl.Utf8,
@@ -52,7 +51,15 @@ OUTPUT_SCHEMA = {
 
 
 def finalize_and_enforce_schema(df: pl.DataFrame) -> pl.DataFrame:
-    """Add metadata and enforce the final output schema."""
+    """
+    Add metadata and enforce the final output schema.
+    
+    Args:
+        df: DataFrame to finalize
+        
+    Returns:
+        DataFrame with enforced schema and metadata
+    """
     # Add metadata using native polars operations
     df_with_metadata = df.with_columns([
         # Use native polars hash for better performance
@@ -61,7 +68,8 @@ def finalize_and_enforce_schema(df: pl.DataFrame) -> pl.DataFrame:
         .alias(HarmonizedFieldName.SHARD_HASH.value),
         
         # Use timezone-aware datetime
-        pl.lit(datetime.now(timezone.utc)).alias(HarmonizedFieldName.PROCESSING_TIMESTAMP.value)
+        pl.lit(datetime.now(timezone.utc))
+        .alias(HarmonizedFieldName.PROCESSING_TIMESTAMP.value)
     ])
     
     # Enforce schema
@@ -69,26 +77,26 @@ def finalize_and_enforce_schema(df: pl.DataFrame) -> pl.DataFrame:
 
 
 def _enforce_output_schema(df: pl.DataFrame) -> pl.DataFrame:
-    """Enforce the output schema on the final DataFrame."""
-    # Select columns in the correct order and cast to proper types
-    columns_to_select = []
+    """
+    Enforce the output schema on the final DataFrame using idiomatic Polars.
+    
+    Args:
+        df: DataFrame to enforce schema on
+        
+    Returns:
+        DataFrame with correct schema and column order
+    """
+    select_expressions = []
     
     for col_name, col_type in OUTPUT_SCHEMA.items():
         if col_name in df.columns:
-            columns_to_select.append(pl.col(col_name).cast(col_type).alias(col_name))
+            # If the column exists, cast it to the correct type
+            expression = pl.col(col_name).cast(col_type)
         else:
-            # Add null column with proper type if missing
-            if col_type == pl.List(pl.Utf8):
-                columns_to_select.append(pl.lit([]).cast(col_type).alias(col_name))
-            elif col_type == pl.Boolean:
-                columns_to_select.append(pl.lit(None).cast(col_type).alias(col_name))
-            elif col_type == pl.Int64:
-                columns_to_select.append(pl.lit(None).cast(col_type).alias(col_name))
-            elif col_type == pl.Date:
-                columns_to_select.append(pl.lit(None).cast(col_type).alias(col_name))
-            elif col_type == pl.Datetime:
-                columns_to_select.append(pl.lit(None).cast(col_type).alias(col_name))
-            else:
-                columns_to_select.append(pl.lit(None).cast(col_type).alias(col_name))
-    
-    return df.select(columns_to_select)
+            # If the column is missing, create a null literal of the correct type
+            # This single line works for all Polars types, including lists
+            expression = pl.lit(None, dtype=col_type)
+            
+        select_expressions.append(expression.alias(col_name))
+        
+    return df.select(select_expressions)

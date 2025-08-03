@@ -2,12 +2,28 @@
 
 from datetime import date, datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Annotated
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, ConfigDict, PlainSerializer
 
 from clintrai.models.types import StudyType, StudyPhase, StudyStatus, Sex
+
+# ✅ Modern Pydantic V2 reusable serializers (replaces deprecated json_encoders)
+ISODatetime = Annotated[
+    datetime, 
+    PlainSerializer(lambda dt: dt.isoformat(), return_type=str)
+]
+
+ISODate = Annotated[
+    date, 
+    PlainSerializer(lambda d: d.isoformat(), return_type=str)
+]
+
+StringUUID = Annotated[
+    UUID, 
+    PlainSerializer(lambda u: str(u), return_type=str)
+]
 
 
 class InterventionType(str, Enum):
@@ -55,27 +71,27 @@ class MaskingType(str, Enum):
 class Contact(BaseModel):
     """Contact information for study personnel."""
     
-    name: str
-    phone: str | None = Field(default=None)
-    phone_ext: str | None = Field(default=None)
-    email: str | None = Field(default=None)
-    role: str | None = Field(default=None)
+    name: str = Field(description="Full name of the contact person")
+    phone: str | None = Field(default=None, description="Primary phone number")
+    phone_ext: str | None = Field(default=None, description="Phone extension")
+    email: str | None = Field(default=None, description="Email address")
+    role: str | None = Field(default=None, description="Role or title of the contact person")
 
 
 class Location(BaseModel):
     """Study location information."""
     
-    facility: str
-    city: str
-    state: str | None = Field(default=None)
-    country: str
-    zip_code: str | None = Field(default=None)
-    status: StudyStatus | None = Field(default=None)
-    contact: Contact | None = Field(default=None)
-    backup_contact: Contact | None = Field(default=None)
-    investigator: Contact | None = Field(default=None)
-    latitude: float | None = Field(default=None)
-    longitude: float | None = Field(default=None)
+    facility: str = Field(description="Name of the study facility")
+    city: str = Field(description="City where the facility is located")
+    state: str | None = Field(default=None, description="State or province")
+    country: str = Field(description="Country where the facility is located")
+    zip_code: str | None = Field(default=None, description="Postal/ZIP code")
+    status: StudyStatus | None = Field(default=None, description="Recruitment status at this location")
+    contact: Contact | None = Field(default=None, description="Primary contact for this location")
+    backup_contact: Contact | None = Field(default=None, description="Backup contact for this location")
+    investigator: Contact | None = Field(default=None, description="Principal investigator at this location")
+    latitude: float | None = Field(default=None, description="Geographic latitude coordinate")
+    longitude: float | None = Field(default=None, description="Geographic longitude coordinate")
 
 
 class Sponsor(BaseModel):
@@ -89,15 +105,15 @@ class Sponsor(BaseModel):
 class Eligibility(BaseModel):
     """Study eligibility criteria."""
     
-    criteria: str
-    gender: Sex = Field(default=Sex.ALL)
-    gender_based: bool = Field(default=False)
-    gender_description: str | None = Field(default=None)
-    minimum_age: str | None = Field(default=None)
-    maximum_age: str | None = Field(default=None)
-    healthy_volunteers: bool = Field(default=False)
-    sampling_method: SamplingMethod | None = Field(default=None)
-    study_population: str | None = Field(default=None)
+    criteria: str = Field(description="Detailed eligibility criteria text")
+    gender: Sex = Field(default=Sex.ALL, description="Gender eligibility requirements")
+    gender_based: bool = Field(default=False, description="Whether eligibility is based on gender identity")
+    gender_description: str | None = Field(default=None, description="Additional description of gender-based eligibility")
+    minimum_age: str | None = Field(default=None, description="Minimum age for participation")
+    maximum_age: str | None = Field(default=None, description="Maximum age for participation")
+    healthy_volunteers: bool = Field(default=False, description="Whether healthy volunteers are accepted")
+    sampling_method: SamplingMethod | None = Field(default=None, description="Sampling method for observational studies")
+    study_population: str | None = Field(default=None, description="Description of the target study population")
 
 
 class Intervention(BaseModel):
@@ -139,15 +155,42 @@ class Reference(BaseModel):
 class StudyDesign(BaseModel):
     """Study design information."""
     
-    allocation: AllocationMethod | None = Field(default=None)
-    intervention_model: str | None = Field(default=None)
-    intervention_model_description: str | None = Field(default=None)
-    primary_purpose: str | None = Field(default=None)
-    observational_model: str | None = Field(default=None)
-    time_perspective: str | None = Field(default=None)
-    masking: MaskingType | None = Field(default=None)
-    masking_description: str | None = Field(default=None)
-    who_masked: list[str] = Field(default_factory=list)
+    allocation: AllocationMethod | None = Field(
+        default=None, 
+        description="Method of assigning participants to an arm"
+    )
+    intervention_model: str | None = Field(
+        default=None,
+        description="General design of the intervention (e.g., 'Single Group Assignment')"
+    )
+    intervention_model_description: str | None = Field(
+        default=None, 
+        description="Additional details about the intervention model"
+    )
+    primary_purpose: str | None = Field(
+        default=None, 
+        description="Primary purpose of the study (e.g., 'Treatment', 'Prevention')"
+    )
+    observational_model: str | None = Field(
+        default=None, 
+        description="Design of observational studies (e.g., 'Cohort', 'Case-Control')"
+    )
+    time_perspective: str | None = Field(
+        default=None, 
+        description="Time perspective for observational studies (e.g., 'Prospective', 'Retrospective')"
+    )
+    masking: MaskingType | None = Field(
+        default=None, 
+        description="Type of masking/blinding used in the study"
+    )
+    masking_description: str | None = Field(
+        default=None, 
+        description="Additional details about masking procedures"
+    )
+    who_masked: list[str] = Field(
+        default_factory=list, 
+        description="List of parties who are masked/blinded"
+    )
 
 
 class Oversight(BaseModel):
@@ -167,25 +210,25 @@ class StudyInfo(BaseModel):
     nct_id: str = Field(..., description="ClinicalTrials.gov identifier")
     org_study_id: str | None = Field(default=None)
     secondary_ids: list[str] = Field(default_factory=list)
-    first_submitted: date | None = Field(default=None)
-    first_posted: date | None = Field(default=None)
-    last_update_submitted: date | None = Field(default=None)
-    last_update_posted: date | None = Field(default=None)
-    study_first_submitted_qc: date | None = Field(default=None)
-    study_first_posted_qc: date | None = Field(default=None)
-    results_first_submitted: date | None = Field(default=None)
-    results_first_posted: date | None = Field(default=None)
-    disposition_first_submitted: date | None = Field(default=None)
-    disposition_first_posted: date | None = Field(default=None)
-    last_update_submitted_qc: date | None = Field(default=None)
-    last_update_posted_qc: date | None = Field(default=None)
-    verification_date: date | None = Field(default=None)
+    first_submitted: ISODate | None = Field(default=None)
+    first_posted: ISODate | None = Field(default=None)
+    last_update_submitted: ISODate | None = Field(default=None)
+    last_update_posted: ISODate | None = Field(default=None)
+    study_first_submitted_qc: ISODate | None = Field(default=None)
+    study_first_posted_qc: ISODate | None = Field(default=None)
+    results_first_submitted: ISODate | None = Field(default=None)
+    results_first_posted: ISODate | None = Field(default=None)
+    disposition_first_submitted: ISODate | None = Field(default=None)
+    disposition_first_posted: ISODate | None = Field(default=None)
+    last_update_submitted_qc: ISODate | None = Field(default=None)
+    last_update_posted_qc: ISODate | None = Field(default=None)
+    verification_date: ISODate | None = Field(default=None)
 
 
 class ClinicalTrial(BaseModel):
     """Complete clinical trial data model."""
     
-    id: UUID = Field(default_factory=uuid4)
+    id: StringUUID = Field(default_factory=uuid4)
     study_info: StudyInfo
     
     # Title and summary
@@ -204,11 +247,11 @@ class ClinicalTrial(BaseModel):
     study_design: StudyDesign | None = Field(default=None)
     
     # Dates
-    start_date: date | None = Field(default=None)
+    start_date: ISODate | None = Field(default=None)
     start_date_type: str | None = Field(default=None)
-    completion_date: date | None = Field(default=None)
+    completion_date: ISODate | None = Field(default=None)
     completion_date_type: str | None = Field(default=None)
-    primary_completion_date: date | None = Field(default=None)
+    primary_completion_date: ISODate | None = Field(default=None)
     primary_completion_date_type: str | None = Field(default=None)
     
     # Enrollment
@@ -256,15 +299,11 @@ class ClinicalTrial(BaseModel):
     patient_data_sharing_description: str | None = Field(default=None)
     
     # Metadata
-    data_downloaded_at: datetime = Field(default_factory=datetime.now)
+    data_downloaded_at: ISODatetime = Field(default_factory=datetime.now)
     source_url: HttpUrl | None = Field(default=None)
     raw_data: dict[str, Any] | None = Field(default=None)
     
-    class Config:
-        """Pydantic model configuration."""
-        
-        json_encoders = {
-            datetime: lambda v: v.isoformat(),
-            date: lambda v: v.isoformat(),
-            UUID: lambda v: str(v),
-        }
+    # ✅ Pydantic V2 style configuration
+    model_config = ConfigDict(
+        populate_by_name=True,  # Often useful when mapping from camelCase APIs
+    )
