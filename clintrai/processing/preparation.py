@@ -84,6 +84,8 @@ def _standardize_csv_columns(csv_df: pl.DataFrame) -> pl.DataFrame:
         CSVFieldName.ACRONYM.value: HarmonizedFieldName.ACRONYM.value,
         CSVFieldName.STUDY_STATUS.value: HarmonizedFieldName.OVERALL_STATUS.value,
         CSVFieldName.STUDY_RESULTS.value: HarmonizedFieldName.HAS_RESULTS.value,
+        CSVFieldName.STUDY_TYPE.value: HarmonizedFieldName.STUDY_TYPE.value,
+        CSVFieldName.BRIEF_SUMMARY.value: HarmonizedFieldName.BRIEF_SUMMARY.value,
         CSVFieldName.CONDITIONS.value: HarmonizedFieldName.CONDITIONS.value,
         CSVFieldName.INTERVENTIONS.value: HarmonizedFieldName.INTERVENTIONS.value,
         CSVFieldName.SPONSOR.value: HarmonizedFieldName.LEAD_SPONSOR.value,
@@ -99,6 +101,15 @@ def _standardize_csv_columns(csv_df: pl.DataFrame) -> pl.DataFrame:
         CSVFieldName.LAST_UPDATE_POSTED.value: HarmonizedFieldName.LAST_UPDATE_POSTED.value,
         CSVFieldName.STUDY_DOCUMENTS.value: HarmonizedFieldName.DOCUMENT_URLS.value,
         CSVFieldName.LOCATIONS.value: HarmonizedFieldName.LOCATIONS.value,
+        # Outcome measures
+        CSVFieldName.PRIMARY_OUTCOME_MEASURES.value: HarmonizedFieldName.PRIMARY_OUTCOME_MEASURES.value,
+        CSVFieldName.SECONDARY_OUTCOME_MEASURES.value: HarmonizedFieldName.SECONDARY_OUTCOME_MEASURES.value,
+        CSVFieldName.OTHER_OUTCOME_MEASURES.value: HarmonizedFieldName.OTHER_OUTCOME_MEASURES.value,
+        # Additional study information  
+        CSVFieldName.FUNDER_TYPE.value: HarmonizedFieldName.FUNDER_TYPE.value,
+        CSVFieldName.STUDY_DESIGN.value: HarmonizedFieldName.STUDY_DESIGN.value,
+        CSVFieldName.OTHER_IDS.value: HarmonizedFieldName.OTHER_IDS.value,
+        CSVFieldName.RESULTS_FIRST_POSTED.value: HarmonizedFieldName.RESULTS_FIRST_POSTED.value,
     }
     
     # Rename columns that exist

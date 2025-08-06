@@ -20,6 +20,7 @@ class DataSource(str, Enum):
     CSV_ONLY = "csv_only"
     JSON_ONLY = "json_only"
     JSON_PRIORITY = "json_priority"
+    CSV_PRIORITY = "csv_priority"
     CSV_FALLBACK = "csv_fallback"
     MERGED = "merged"
 
@@ -258,6 +259,17 @@ class HarmonizedFieldName(str, Enum):
     DOCUMENT_FILES = "document_files"
     LOCATIONS = "locations"
     
+    # Outcome measures  
+    PRIMARY_OUTCOME_MEASURES = "primary_outcome_measures"
+    SECONDARY_OUTCOME_MEASURES = "secondary_outcome_measures"
+    OTHER_OUTCOME_MEASURES = "other_outcome_measures"
+    
+    # Additional study information
+    FUNDER_TYPE = "funder_type"
+    STUDY_DESIGN = "study_design"
+    OTHER_IDS = "other_ids"
+    RESULTS_FIRST_POSTED = "results_first_posted"
+    
     # Metadata
     DATA_SOURCE = "data_source"
     SHARD_HASH = "shard_hash"
@@ -321,6 +333,12 @@ class StudyStatus(str, Enum):
     TERMINATED = "TERMINATED"
     WITHDRAWN = "WITHDRAWN"
     UNKNOWN = "UNKNOWN"
+    # Additional statuses found in the data
+    WITHHELD = "WITHHELD"
+    APPROVED_FOR_MARKETING = "APPROVED_FOR_MARKETING"
+    NO_LONGER_AVAILABLE = "NO_LONGER_AVAILABLE"
+    AVAILABLE = "AVAILABLE"
+    TEMPORARILY_NOT_AVAILABLE = "TEMPORARILY_NOT_AVAILABLE"
 
 
 class StudyType(str, Enum):

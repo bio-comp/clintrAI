@@ -27,6 +27,7 @@ from clintrai.metaflow.harmonization import (
     create_shards,
     harmonize_data,
 )
+from clintrai.processing.documents import process_document_downloads
 from clintrai.metaflow.nlp_processing import (
     combine_nlp_results,
     get_stopwords,
@@ -136,12 +137,12 @@ class ClinicalTrialsFlow(FlowSpec):
         )
         self.next(self.harmonize_data)
     
-    @step
+    @retry(times=settings.metaflow.max_retry_attempts)
     @resources(
         cpu=settings.metaflow.default_cpu * 2,  # Use more CPU for harmonization
         memory=settings.metaflow.default_memory * 2
     )
-    @retry(times=settings.metaflow.max_retry_attempts)
+    @step
     def harmonize_data(self):
         """Harmonize CSV and JSON data."""
         self.harmonized_df, self.harmonization_stats = harmonize_data(
@@ -156,6 +157,27 @@ class ClinicalTrialsFlow(FlowSpec):
         self.harmonized_df.write_parquet(output_path)
         self.harmonization_stats["output_path"] = str(output_path)
         
+        self.next(self.download_documents)
+    
+    @retry(times=settings.metaflow.max_retry_attempts)
+    @resources(
+        cpu=settings.metaflow.default_cpu,
+        memory=settings.metaflow.default_memory
+    )
+    @step
+    async def download_documents(self):
+        """Download supplementary documents for studies."""
+        logger.info("Starting document download process")
+        
+        # Download documents with configured limits
+        self.document_records, self.document_stats = await process_document_downloads(
+            self.harmonized_df,
+            self.output_dir_obj,
+            max_concurrent=settings.processing.get("max_concurrent_downloads", 10),
+            max_size_mb=settings.processing.get("max_document_size_mb", 50)
+        )
+        
+        logger.info(f"Downloaded {self.document_stats['downloaded']} documents")
         self.next(self.create_shards)
     
     @step
@@ -168,13 +190,13 @@ class ClinicalTrialsFlow(FlowSpec):
         )
         self.next(self.process_nlp, foreach="shards")
     
-    @step
+    @retry(times=settings.metaflow.max_retry_attempts)
+    @catch(var="nlp_error")
     @resources(
         cpu=settings.metaflow.default_cpu,
         memory=settings.metaflow.default_memory
     )
-    @retry(times=settings.metaflow.max_retry_attempts)
-    @catch(var="nlp_error")
+    @step
     def process_nlp(self):
         """Process NLP for each shard in parallel."""
         shard = self.input
@@ -223,11 +245,11 @@ class ClinicalTrialsFlow(FlowSpec):
         logger.info(f"Shard {shard['shard_id']} NLP processing complete")
         self.next(self.combine_nlp_results)
     
-    @step
     @resources(
         cpu=settings.metaflow.default_cpu * 2,
         memory=settings.metaflow.default_memory * 2
     )
+    @step
     def combine_nlp_results(self, inputs):
         """Combine NLP results from all shards."""
         # Collect all processed shards and check for errors
@@ -268,14 +290,14 @@ class ClinicalTrialsFlow(FlowSpec):
         
         self.next(self.generate_embeddings)
     
-    @step
+    @retry(times=settings.metaflow.max_retry_attempts)
+    @environment(vars={"TOKENIZERS_PARALLELISM": "false"})
     @resources(
         cpu=settings.metaflow.default_cpu * 4,
         memory=settings.metaflow.embedding_step_memory,
         gpu=1 if settings.processing.enable_gpu else 0
     )
-    @retry(times=settings.metaflow.max_retry_attempts)
-    @environment(vars={"TOKENIZERS_PARALLELISM": "false"})
+    @step
     def generate_embeddings(self):
         """Generate embeddings for text using sentence transformers."""
         logger.info("Generating text embeddings")
@@ -390,6 +412,7 @@ class ClinicalTrialsFlow(FlowSpec):
             "configuration": self.config,  # or flow_params for runtime parameters only
             "overlap_stats": self.overlap_stats,
             "harmonization_stats": self.harmonization_stats,
+            "document_stats": self.document_stats,
             "nlp_stats": self.nlp_aggregate_stats,
             "embedding_stats": self.embedding_stats,
             "quality_report": self.quality_report,
@@ -401,6 +424,7 @@ class ClinicalTrialsFlow(FlowSpec):
             json.dump(summary, f, indent=2, default=str)
         
         logger.info(f"Studies Processed: {self.harmonization_stats['output_records']:,}")
+        logger.info(f"Documents Downloaded: {self.document_stats['downloaded']:,} ({self.document_stats['total_size_mb']:.1f} MB)")
         logger.info(f"NLP Processed: {self.nlp_aggregate_stats['total_processed']:,}")
         logger.info(f"Embeddings Generated: {self.embedding_stats.get('total_embeddings', 0):,}")
         logger.info(f"Quality Status: {'PASSED' if self.quality_report['passed'] else 'FAILED'}")
