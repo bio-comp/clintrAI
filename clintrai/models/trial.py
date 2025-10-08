@@ -11,12 +11,12 @@ from clintrai.models.types import StudyType, StudyPhase, StudyStatus, Sex
 
 # ✅ Modern Pydantic V2 reusable serializers (replaces deprecated json_encoders)
 ISODatetime = Annotated[
-    datetime, 
+    datetime,
     PlainSerializer(lambda dt: dt.isoformat(), return_type=str)
 ]
 
 ISODate = Annotated[
-    date, 
+    date,
     PlainSerializer(lambda d: d.isoformat(), return_type=str)
 ]
 
@@ -28,7 +28,7 @@ StringUUID = Annotated[
 
 class InterventionType(str, Enum):
     """Types of interventions in clinical trials."""
-    
+
     DRUG = "Drug"
     DEVICE = "Device"
     BIOLOGICAL = "Biological"
@@ -80,7 +80,7 @@ class Contact(BaseModel):
 
 class Location(BaseModel):
     """Study location information."""
-    
+
     facility: str = Field(description="Name of the study facility")
     city: str = Field(description="City where the facility is located")
     state: str | None = Field(default=None, description="State or province")
