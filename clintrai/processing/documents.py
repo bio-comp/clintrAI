@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from datetime import UTC, datetime
+import hashlib
+import os
 from pathlib import Path
 import re
 from typing import Any, TypeAlias
 from urllib.parse import urlparse
+from uuid import uuid4
 
 import httpx
 from loguru import logger
@@ -21,7 +25,53 @@ DownloadStats: TypeAlias = dict[str, Any]
 HttpClient: TypeAlias = httpx.AsyncClient
 
 
-def extract_document_info(df: pl.DataFrame) -> list[DocumentInfo]:
+def _utc_now_iso() -> str:
+    """Return current UTC timestamp in ISO-8601 format."""
+    return datetime.now(UTC).isoformat()
+
+
+def _generate_snapshot_id() -> str:
+    """Generate a unique source snapshot identifier."""
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    return f"snapshot-{timestamp}-{uuid4().hex[:8]}"
+
+
+def _persist_raw_artifact(
+    raw_artifacts_dir: Path,
+    content: bytes,
+    filename: str,
+) -> tuple[Path, str]:
+    """
+    Persist content as an immutable, content-addressed artifact.
+
+    Returns:
+        Tuple of (artifact_path, sha256_hash)
+    """
+    content_hash = hashlib.sha256(content).hexdigest()
+    file_extension = Path(filename).suffix.lower() or ".bin"
+
+    artifact_path = raw_artifacts_dir / content_hash[:2] / f"{content_hash}{file_extension}"
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        fd = os.open(
+            artifact_path,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            0o644,
+        )
+    except FileExistsError:
+        return artifact_path, content_hash
+
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(content)
+
+    return artifact_path, content_hash
+
+
+def extract_document_info(
+    df: pl.DataFrame,
+    snapshot_id: str | None = None,
+) -> list[DocumentInfo]:
     """
     Extract document download information from harmonized DataFrame.
     
@@ -57,7 +107,11 @@ def extract_document_info(df: pl.DataFrame) -> list[DocumentInfo]:
                 "local_path": None,
                 "file_size": None,
                 "status": "pending",
-                "error": None
+                "error": None,
+                "source_snapshot_id": snapshot_id,
+                "source_content_sha256": None,
+                "raw_artifact_path": None,
+                "source_fetched_at": None,
             })
 
     logger.info(f"Found {len(documents)} documents to download from {studies_with_docs.height} studies")
@@ -95,6 +149,7 @@ async def _download_single_document(
     client: HttpClient,
     doc_info: DocumentInfo,
     output_dir: Path,
+    raw_artifacts_dir: Path,
     max_size_mb: int = 50
 ) -> DocumentInfo:
     """
@@ -111,12 +166,22 @@ async def _download_single_document(
     """
     try:
         local_path = _create_safe_path(output_dir, doc_info["nct_id"], doc_info["filename"])
+        fetched_at = _utc_now_iso()
 
         # Skip if already exists
         if local_path.exists():
+            existing_content = local_path.read_bytes()
+            artifact_path, content_hash = _persist_raw_artifact(
+                raw_artifacts_dir,
+                existing_content,
+                doc_info["filename"],
+            )
             doc_info["local_path"] = str(local_path)
             doc_info["file_size"] = local_path.stat().st_size
             doc_info["status"] = "skipped"
+            doc_info["source_content_sha256"] = content_hash
+            doc_info["raw_artifact_path"] = str(artifact_path)
+            doc_info["source_fetched_at"] = None
             return doc_info
 
         # Download with timeout and size limits
@@ -131,6 +196,12 @@ async def _download_single_document(
             doc_info["error"] = f"File too large: {len(content) / 1024 / 1024:.1f}MB"
             return doc_info
 
+        artifact_path, content_hash = _persist_raw_artifact(
+            raw_artifacts_dir,
+            content,
+            doc_info["filename"],
+        )
+
         # Save file
         local_path.write_bytes(content)
 
@@ -138,6 +209,9 @@ async def _download_single_document(
         doc_info["local_path"] = str(local_path)
         doc_info["file_size"] = len(content)
         doc_info["status"] = "downloaded"
+        doc_info["source_content_sha256"] = content_hash
+        doc_info["raw_artifact_path"] = str(artifact_path)
+        doc_info["source_fetched_at"] = fetched_at
 
         logger.debug(f"Downloaded {doc_info['nct_id']}/{doc_info['filename']} ({len(content) / 1024:.1f}KB)")
 
@@ -160,7 +234,8 @@ async def download_documents(
     output_dir: Path,
     client_factory: Callable[[], HttpClient],
     max_concurrent: int = 10,
-    max_size_mb: int = 50
+    max_size_mb: int = 50,
+    raw_artifacts_dir: Path | None = None,
 ) -> tuple[list[DocumentInfo], DownloadStats]:
     """
     Download documents with injected HTTP client factory.
@@ -179,6 +254,8 @@ async def download_documents(
         return [], _create_empty_stats()
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    artifacts_dir = raw_artifacts_dir or (output_dir.parent / "raw_artifacts")
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
 
     # Use semaphore to limit concurrent downloads
     semaphore = asyncio.Semaphore(max_concurrent)
@@ -186,7 +263,13 @@ async def download_documents(
     async def download_with_limit(doc_info: DocumentInfo) -> DocumentInfo:
         async with semaphore:
             async with client_factory() as client:
-                return await _download_single_document(client, doc_info, output_dir, max_size_mb)
+                return await _download_single_document(
+                    client,
+                    doc_info,
+                    output_dir,
+                    artifacts_dir,
+                    max_size_mb,
+                )
 
     logger.info(f"Starting download of {len(documents)} documents with {max_concurrent} concurrent connections")
 
@@ -266,6 +349,35 @@ def save_document_metadata(documents: list[DocumentInfo], output_path: Path) -> 
     logger.info(f"Saved document metadata for {len(documents)} documents to {output_path}")
 
 
+def save_source_snapshot_metadata(
+    documents: list[DocumentInfo],
+    output_path: Path,
+    snapshot_id: str,
+) -> None:
+    """Save source snapshot summary metadata to parquet."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    downloaded_count = sum(1 for doc in documents if doc["status"] == "downloaded")
+    skipped_count = sum(1 for doc in documents if doc["status"] == "skipped")
+    failed_count = sum(1 for doc in documents if doc["status"] == "failed")
+    total_size_bytes = sum(int(doc["file_size"] or 0) for doc in documents)
+    studies_with_documents = len({doc["nct_id"] for doc in documents})
+
+    snapshot_row = {
+        "snapshot_id": snapshot_id,
+        "created_at": _utc_now_iso(),
+        "document_count": len(documents),
+        "downloaded_count": downloaded_count,
+        "skipped_count": skipped_count,
+        "failed_count": failed_count,
+        "studies_with_documents": studies_with_documents,
+        "total_size_bytes": total_size_bytes,
+    }
+
+    pl.DataFrame([snapshot_row]).write_parquet(output_path)
+    logger.info(f"Saved source snapshot metadata to {output_path}")
+
+
 def create_httpx_client() -> HttpClient:
     """
     Create HTTP client with appropriate settings for document downloads.
@@ -284,7 +396,8 @@ async def process_document_downloads(
     harmonized_df: pl.DataFrame,
     output_dir: Path,
     max_concurrent: int = 10,
-    max_size_mb: int = 50
+    max_size_mb: int = 50,
+    snapshot_id: str | None = None,
 ) -> tuple[list[DocumentInfo], DownloadStats]:
     """
     Main function to process document downloads from harmonized data.
@@ -299,12 +412,19 @@ async def process_document_downloads(
         Tuple of (document_records, download_stats)
     """
     logger.info("Starting document download process")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    run_snapshot_id = snapshot_id or _generate_snapshot_id()
 
     # Extract document information
-    documents = extract_document_info(harmonized_df)
+    documents = extract_document_info(harmonized_df, run_snapshot_id)
 
     if not documents:
         logger.warning("No documents found to download")
+        save_source_snapshot_metadata(
+            [],
+            output_dir / "source_snapshot.parquet",
+            run_snapshot_id,
+        )
         return [], _create_empty_stats()
 
     # Download documents with dependency injection
@@ -313,12 +433,19 @@ async def process_document_downloads(
         output_dir / "documents",
         create_httpx_client,  # Injected client factory
         max_concurrent,
-        max_size_mb
+        max_size_mb,
+        raw_artifacts_dir=output_dir / "raw_artifacts",
     )
+    stats["snapshot_id"] = run_snapshot_id
 
     # Save metadata
     metadata_path = output_dir / "document_metadata.parquet"
     save_document_metadata(updated_documents, metadata_path)
+    save_source_snapshot_metadata(
+        updated_documents,
+        output_dir / "source_snapshot.parquet",
+        run_snapshot_id,
+    )
 
     # Log summary
     logger.info("Document download summary:")
