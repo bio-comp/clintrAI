@@ -41,6 +41,8 @@ jobs:
           --with pydantic
           --with polars
           --with httpx
+          --with curl-cffi
+          --with tenacity
           --with loguru
           --with duckdb
           python -m pytest -q -p no:cacheprovider

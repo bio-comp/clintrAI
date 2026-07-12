@@ -9,7 +9,8 @@ The default test command runs deterministic unit tests and excludes live API int
 ```bash
 PYTHONDONTWRITEBYTECODE=1 uv run --no-project \
   --with pytest --with pytest-asyncio \
-  --with pydantic --with polars --with httpx --with loguru --with duckdb \
+  --with pydantic --with polars --with httpx --with curl-cffi --with tenacity \
+  --with loguru --with duckdb \
   python -m pytest -q -p no:cacheprovider
 ```
 
