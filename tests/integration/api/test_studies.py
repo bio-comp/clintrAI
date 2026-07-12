@@ -6,6 +6,8 @@ from clintrai.api import studies
 from clintrai.models.api_models import PagedStudies, Study
 from clintrai.api.exceptions import NotFoundError
 
+pytestmark = pytest.mark.integration
+
 
 @pytest.mark.asyncio
 async def test_list_studies_live():

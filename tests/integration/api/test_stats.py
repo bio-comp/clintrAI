@@ -4,6 +4,8 @@ import pytest
 from clintrai.api.hybrid_client import create_hybrid_client
 from clintrai.api import stats
 
+pytestmark = pytest.mark.integration
+
 
 @pytest.mark.asyncio
 async def test_get_size_stats_live():

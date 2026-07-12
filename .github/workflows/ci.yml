@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.3.2
+        with:
+          enable-cache: true
+
+      - name: Run unit tests
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: >-
+          uv run --no-project
+          --with pytest
+          --with pytest-asyncio
+          --with pydantic
+          --with polars
+          --with httpx
+          --with curl-cffi
+          --with tenacity
+          --with loguru
+          --with duckdb
+          python -m pytest -q -p no:cacheprovider
+
+      - name: Run Ruff correctness checks
+        run: >-
+          uv run --no-project --with ruff
+          ruff check clintrai tests scripts airflow
+          --select E9,F63,F7,F82,B
+
+      - name: Build package artifacts
+        run: uv build
