@@ -9,6 +9,7 @@ import hashlib
 import os
 from pathlib import Path
 import re
+import tempfile
 from typing import Any, TypeAlias
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -23,6 +24,7 @@ from clintrai.models.types import HarmonizedFieldName
 DocumentInfo: TypeAlias = dict[str, Any]
 DownloadStats: TypeAlias = dict[str, Any]
 HttpClient: TypeAlias = httpx.AsyncClient
+_SNAPSHOT_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
 
 def _utc_now_iso() -> str:
@@ -34,6 +36,16 @@ def _generate_snapshot_id() -> str:
     """Generate a unique source snapshot identifier."""
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     return f"snapshot-{timestamp}-{uuid4().hex[:8]}"
+
+
+def _create_snapshot_dir(output_dir: Path, snapshot_id: str) -> Path:
+    """Reserve an immutable directory for one source snapshot."""
+    if _SNAPSHOT_ID_PATTERN.fullmatch(snapshot_id) is None:
+        raise ValueError(f"Invalid snapshot identifier: {snapshot_id!r}")
+
+    snapshot_dir = output_dir / "snapshots" / snapshot_id
+    snapshot_dir.mkdir(parents=True, exist_ok=False)
+    return snapshot_dir
 
 
 def _persist_raw_artifact(
@@ -53,17 +65,35 @@ def _persist_raw_artifact(
     artifact_path = raw_artifacts_dir / content_hash[:2] / f"{content_hash}{file_extension}"
     artifact_path.parent.mkdir(parents=True, exist_ok=True)
 
-    try:
-        fd = os.open(
-            artifact_path,
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
-            0o644,
-        )
-    except FileExistsError:
+    def validate_existing_artifact() -> None:
+        existing_hash = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+        if existing_hash != content_hash:
+            raise RuntimeError(
+                f"Raw artifact integrity check failed: {artifact_path}"
+            )
+
+    if artifact_path.exists():
+        validate_existing_artifact()
         return artifact_path, content_hash
 
-    with os.fdopen(fd, "wb") as handle:
-        handle.write(content)
+    fd, temporary_name = tempfile.mkstemp(
+        dir=artifact_path.parent,
+        prefix=f".{content_hash}.",
+        suffix=".tmp",
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+
+        try:
+            os.link(temporary_path, artifact_path)
+        except FileExistsError:
+            validate_existing_artifact()
+    finally:
+        temporary_path.unlink(missing_ok=True)
 
     return artifact_path, content_hash
 
@@ -135,14 +165,21 @@ def _extract_filename(url: str) -> str:
     return filename if filename else "unknown_document.pdf"
 
 
-def _create_safe_path(output_dir: Path, nct_id: str, filename: str) -> Path:
+def _create_safe_path(
+    output_dir: Path,
+    nct_id: str,
+    source_url: str,
+    filename: str,
+) -> Path:
     """Create safe local file path for document."""
-    study_dir = output_dir / nct_id
-    study_dir.mkdir(parents=True, exist_ok=True)
+    safe_nct_id = re.sub(r"[^\w\-.]", "_", nct_id)
+    source_id = hashlib.sha256(source_url.encode()).hexdigest()[:16]
+    source_dir = output_dir / safe_nct_id / source_id
+    source_dir.mkdir(parents=True, exist_ok=True)
 
     # Sanitize filename
     safe_filename = re.sub(r"[^\w\-_\.]", "_", filename)
-    return study_dir / safe_filename
+    return source_dir / safe_filename
 
 
 async def _download_single_document(
@@ -165,30 +202,22 @@ async def _download_single_document(
         Updated document info with download status
     """
     try:
-        local_path = _create_safe_path(output_dir, doc_info["nct_id"], doc_info["filename"])
-        fetched_at = _utc_now_iso()
-
-        # Skip if already exists
-        if local_path.exists():
-            existing_content = local_path.read_bytes()
-            artifact_path, content_hash = _persist_raw_artifact(
-                raw_artifacts_dir,
-                existing_content,
-                doc_info["filename"],
-            )
-            doc_info["local_path"] = str(local_path)
-            doc_info["file_size"] = local_path.stat().st_size
-            doc_info["status"] = "skipped"
-            doc_info["source_content_sha256"] = content_hash
-            doc_info["raw_artifact_path"] = str(artifact_path)
-            doc_info["source_fetched_at"] = None
-            return doc_info
-
         # Download with timeout and size limits
         response = await client.get(doc_info["url"], timeout=60.0)
         response.raise_for_status()
 
         content = response.content
+        fetched_at = _utc_now_iso()
+        artifact_path, content_hash = _persist_raw_artifact(
+            raw_artifacts_dir,
+            content,
+            doc_info["filename"],
+        )
+
+        doc_info["file_size"] = len(content)
+        doc_info["source_content_sha256"] = content_hash
+        doc_info["raw_artifact_path"] = str(artifact_path)
+        doc_info["source_fetched_at"] = fetched_at
 
         # Check file size
         if len(content) > max_size_mb * 1024 * 1024:
@@ -196,22 +225,17 @@ async def _download_single_document(
             doc_info["error"] = f"File too large: {len(content) / 1024 / 1024:.1f}MB"
             return doc_info
 
-        artifact_path, content_hash = _persist_raw_artifact(
-            raw_artifacts_dir,
-            content,
+        local_path = _create_safe_path(
+            output_dir,
+            doc_info["nct_id"],
+            doc_info["url"],
             doc_info["filename"],
         )
-
-        # Save file
         local_path.write_bytes(content)
 
         # Update document info
         doc_info["local_path"] = str(local_path)
-        doc_info["file_size"] = len(content)
         doc_info["status"] = "downloaded"
-        doc_info["source_content_sha256"] = content_hash
-        doc_info["raw_artifact_path"] = str(artifact_path)
-        doc_info["source_fetched_at"] = fetched_at
 
         logger.debug(f"Downloaded {doc_info['nct_id']}/{doc_info['filename']} ({len(content) / 1024:.1f}KB)")
 
@@ -353,6 +377,9 @@ def save_source_snapshot_metadata(
     documents: list[DocumentInfo],
     output_path: Path,
     snapshot_id: str,
+    *,
+    status: str = "completed",
+    error: str | None = None,
 ) -> None:
     """Save source snapshot summary metadata to parquet."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -366,6 +393,8 @@ def save_source_snapshot_metadata(
     snapshot_row = {
         "snapshot_id": snapshot_id,
         "created_at": _utc_now_iso(),
+        "status": status,
+        "error": error,
         "document_count": len(documents),
         "downloaded_count": downloaded_count,
         "skipped_count": skipped_count,
@@ -413,47 +442,63 @@ async def process_document_downloads(
     """
     logger.info("Starting document download process")
     output_dir.mkdir(parents=True, exist_ok=True)
-    run_snapshot_id = snapshot_id or _generate_snapshot_id()
+    run_snapshot_id = snapshot_id if snapshot_id is not None else _generate_snapshot_id()
+    snapshot_dir = _create_snapshot_dir(output_dir, run_snapshot_id)
+    documents: list[DocumentInfo] = []
 
-    # Extract document information
-    documents = extract_document_info(harmonized_df, run_snapshot_id)
+    try:
+        # Extract document information
+        documents = extract_document_info(harmonized_df, run_snapshot_id)
 
-    if not documents:
-        logger.warning("No documents found to download")
+        if not documents:
+            logger.warning("No documents found to download")
+            save_source_snapshot_metadata(
+                [],
+                snapshot_dir / "source_snapshot.parquet",
+                run_snapshot_id,
+            )
+            stats = _create_empty_stats()
+            stats["snapshot_id"] = run_snapshot_id
+            return [], stats
+
+        # Download documents with dependency injection
+        updated_documents, stats = await download_documents(
+            documents,
+            snapshot_dir / "documents",
+            create_httpx_client,  # Injected client factory
+            max_concurrent,
+            max_size_mb,
+            raw_artifacts_dir=output_dir / "raw_artifacts",
+        )
+        stats["snapshot_id"] = run_snapshot_id
+
+        # Save metadata
+        metadata_path = snapshot_dir / "document_metadata.parquet"
+        save_document_metadata(updated_documents, metadata_path)
         save_source_snapshot_metadata(
-            [],
-            output_dir / "source_snapshot.parquet",
+            updated_documents,
+            snapshot_dir / "source_snapshot.parquet",
             run_snapshot_id,
         )
-        return [], _create_empty_stats()
 
-    # Download documents with dependency injection
-    updated_documents, stats = await download_documents(
-        documents,
-        output_dir / "documents",
-        create_httpx_client,  # Injected client factory
-        max_concurrent,
-        max_size_mb,
-        raw_artifacts_dir=output_dir / "raw_artifacts",
-    )
-    stats["snapshot_id"] = run_snapshot_id
+        # Log summary
+        logger.info("Document download summary:")
+        logger.info(f"  Studies with documents: {stats['studies_with_documents']:,}")
+        logger.info(f"  Total documents: {stats['total_documents']:,}")
+        logger.info(f"  Downloaded: {stats['downloaded']:,}")
+        logger.info(f"  Failed: {stats['failed']:,}")
+        logger.info(f"  Skipped: {stats['skipped']:,}")
+        logger.info(f"  Total size: {stats['total_size_mb']:.1f} MB")
 
-    # Save metadata
-    metadata_path = output_dir / "document_metadata.parquet"
-    save_document_metadata(updated_documents, metadata_path)
-    save_source_snapshot_metadata(
-        updated_documents,
-        output_dir / "source_snapshot.parquet",
-        run_snapshot_id,
-    )
-
-    # Log summary
-    logger.info("Document download summary:")
-    logger.info(f"  Studies with documents: {stats['studies_with_documents']:,}")
-    logger.info(f"  Total documents: {stats['total_documents']:,}")
-    logger.info(f"  Downloaded: {stats['downloaded']:,}")
-    logger.info(f"  Failed: {stats['failed']:,}")
-    logger.info(f"  Skipped: {stats['skipped']:,}")
-    logger.info(f"  Total size: {stats['total_size_mb']:.1f} MB")
-
-    return updated_documents, stats
+        return updated_documents, stats
+    except Exception as exc:
+        failure_manifest_path = snapshot_dir / "source_snapshot.parquet"
+        if not failure_manifest_path.exists():
+            save_source_snapshot_metadata(
+                documents,
+                failure_manifest_path,
+                run_snapshot_id,
+                status="failed",
+                error=str(exc),
+            )
+        raise
