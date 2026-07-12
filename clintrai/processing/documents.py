@@ -260,9 +260,9 @@ async def download_documents(
     # Use semaphore to limit concurrent downloads
     semaphore = asyncio.Semaphore(max_concurrent)
 
-    async def download_with_limit(doc_info: DocumentInfo) -> DocumentInfo:
-        async with semaphore:
-            async with client_factory() as client:
+    async with client_factory() as client:
+        async def download_with_limit(doc_info: DocumentInfo) -> DocumentInfo:
+            async with semaphore:
                 return await _download_single_document(
                     client,
                     doc_info,
@@ -271,13 +271,13 @@ async def download_documents(
                     max_size_mb,
                 )
 
-    logger.info(f"Starting download of {len(documents)} documents with {max_concurrent} concurrent connections")
+        logger.info(f"Starting download of {len(documents)} documents with {max_concurrent} concurrent connections")
 
-    # Download all documents
-    updated_documents = await asyncio.gather(
-        *[download_with_limit(doc) for doc in documents],
-        return_exceptions=True
-    )
+        # Download all documents through one connection pool.
+        updated_documents = await asyncio.gather(
+            *[download_with_limit(doc) for doc in documents],
+            return_exceptions=True,
+        )
 
     # Handle any exceptions from gather
     results = []
