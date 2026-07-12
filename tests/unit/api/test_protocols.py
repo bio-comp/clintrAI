@@ -33,8 +33,8 @@ def test_protocol_compliance():
     # Test that the client has the required methods
     assert hasattr(client, "get")
     assert hasattr(client, "close")
-    assert callable(getattr(client, "get"))
-    assert callable(getattr(client, "close"))
+    assert callable(client.get)
+    assert callable(client.close)
 
 
 def test_protocol_methods_exist():
