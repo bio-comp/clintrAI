@@ -23,6 +23,7 @@ from clintrai.models.types import HarmonizedFieldName
 DocumentInfo: TypeAlias = dict[str, Any]
 DownloadStats: TypeAlias = dict[str, Any]
 HttpClient: TypeAlias = httpx.AsyncClient
+_SNAPSHOT_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
 
 def _utc_now_iso() -> str:
@@ -34,6 +35,16 @@ def _generate_snapshot_id() -> str:
     """Generate a unique source snapshot identifier."""
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     return f"snapshot-{timestamp}-{uuid4().hex[:8]}"
+
+
+def _create_snapshot_dir(output_dir: Path, snapshot_id: str) -> Path:
+    """Reserve an immutable directory for one source snapshot."""
+    if _SNAPSHOT_ID_PATTERN.fullmatch(snapshot_id) is None:
+        raise ValueError(f"Invalid snapshot identifier: {snapshot_id!r}")
+
+    snapshot_dir = output_dir / "snapshots" / snapshot_id
+    snapshot_dir.mkdir(parents=True, exist_ok=False)
+    return snapshot_dir
 
 
 def _persist_raw_artifact(
@@ -135,14 +146,21 @@ def _extract_filename(url: str) -> str:
     return filename if filename else "unknown_document.pdf"
 
 
-def _create_safe_path(output_dir: Path, nct_id: str, filename: str) -> Path:
+def _create_safe_path(
+    output_dir: Path,
+    nct_id: str,
+    source_url: str,
+    filename: str,
+) -> Path:
     """Create safe local file path for document."""
-    study_dir = output_dir / nct_id
-    study_dir.mkdir(parents=True, exist_ok=True)
+    safe_nct_id = re.sub(r"[^\w\-.]", "_", nct_id)
+    source_id = hashlib.sha256(source_url.encode()).hexdigest()[:16]
+    source_dir = output_dir / safe_nct_id / source_id
+    source_dir.mkdir(parents=True, exist_ok=True)
 
     # Sanitize filename
     safe_filename = re.sub(r"[^\w\-_\.]", "_", filename)
-    return study_dir / safe_filename
+    return source_dir / safe_filename
 
 
 async def _download_single_document(
@@ -165,30 +183,22 @@ async def _download_single_document(
         Updated document info with download status
     """
     try:
-        local_path = _create_safe_path(output_dir, doc_info["nct_id"], doc_info["filename"])
-        fetched_at = _utc_now_iso()
-
-        # Skip if already exists
+        local_path = _create_safe_path(
+            output_dir,
+            doc_info["nct_id"],
+            doc_info["url"],
+            doc_info["filename"],
+        )
+        existing_hash = None
         if local_path.exists():
-            existing_content = local_path.read_bytes()
-            artifact_path, content_hash = _persist_raw_artifact(
-                raw_artifacts_dir,
-                existing_content,
-                doc_info["filename"],
-            )
-            doc_info["local_path"] = str(local_path)
-            doc_info["file_size"] = local_path.stat().st_size
-            doc_info["status"] = "skipped"
-            doc_info["source_content_sha256"] = content_hash
-            doc_info["raw_artifact_path"] = str(artifact_path)
-            doc_info["source_fetched_at"] = None
-            return doc_info
+            existing_hash = hashlib.sha256(local_path.read_bytes()).hexdigest()
 
         # Download with timeout and size limits
         response = await client.get(doc_info["url"], timeout=60.0)
         response.raise_for_status()
 
         content = response.content
+        fetched_at = _utc_now_iso()
 
         # Check file size
         if len(content) > max_size_mb * 1024 * 1024:
@@ -202,13 +212,15 @@ async def _download_single_document(
             doc_info["filename"],
         )
 
-        # Save file
-        local_path.write_bytes(content)
+        if existing_hash != content_hash:
+            local_path.write_bytes(content)
 
         # Update document info
         doc_info["local_path"] = str(local_path)
         doc_info["file_size"] = len(content)
-        doc_info["status"] = "downloaded"
+        doc_info["status"] = (
+            "skipped" if existing_hash == content_hash else "downloaded"
+        )
         doc_info["source_content_sha256"] = content_hash
         doc_info["raw_artifact_path"] = str(artifact_path)
         doc_info["source_fetched_at"] = fetched_at
@@ -414,6 +426,7 @@ async def process_document_downloads(
     logger.info("Starting document download process")
     output_dir.mkdir(parents=True, exist_ok=True)
     run_snapshot_id = snapshot_id or _generate_snapshot_id()
+    snapshot_dir = _create_snapshot_dir(output_dir, run_snapshot_id)
 
     # Extract document information
     documents = extract_document_info(harmonized_df, run_snapshot_id)
@@ -422,10 +435,12 @@ async def process_document_downloads(
         logger.warning("No documents found to download")
         save_source_snapshot_metadata(
             [],
-            output_dir / "source_snapshot.parquet",
+            snapshot_dir / "source_snapshot.parquet",
             run_snapshot_id,
         )
-        return [], _create_empty_stats()
+        stats = _create_empty_stats()
+        stats["snapshot_id"] = run_snapshot_id
+        return [], stats
 
     # Download documents with dependency injection
     updated_documents, stats = await download_documents(
@@ -439,11 +454,11 @@ async def process_document_downloads(
     stats["snapshot_id"] = run_snapshot_id
 
     # Save metadata
-    metadata_path = output_dir / "document_metadata.parquet"
+    metadata_path = snapshot_dir / "document_metadata.parquet"
     save_document_metadata(updated_documents, metadata_path)
     save_source_snapshot_metadata(
         updated_documents,
-        output_dir / "source_snapshot.parquet",
+        snapshot_dir / "source_snapshot.parquet",
         run_snapshot_id,
     )
 
